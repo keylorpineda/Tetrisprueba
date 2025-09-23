@@ -44,10 +44,19 @@ JUMPS
     row_is_smart db 0    
     not_enough_space db 0     
     delay_counter dw 0
-    successful_magic_shift dw 0 
+    speed_delay dw 5
+    speed_min_delay dw 2
+    speed_max_delay dw 8
+    speed_level db 4
+    successful_magic_shift dw 0
     successful_magic_shift_pred dw 0
     score dw 0
-    msg_score db "Score:0000$"   
+    msg_score db "Score:0000$"
+    msg_speed_ctrl db "Q=Lento  E=Rapido$"
+    msg_speed_level db "Nivel velocidad: 0$"
+    msg_game_over db "*** FIN DEL JUEGO ***$"
+    msg_final_score db "Puntaje final: 0000$"
+    msg_press_key db "Pulsa una tecla para salir$"
 .code
 main proc far
     mov ax, @data
@@ -70,6 +79,7 @@ main proc far
     mov block_border_colour, 0H 
     call draw_border
     call display_score
+    call display_speed_controls
     call genrate_random_number_init 
     call delay_2
     call generate_random_shape
@@ -90,11 +100,12 @@ main proc far
         je game_over
     skip_genterate_label:     
         jmp game_loop 
-    game_over:        
-        mov block_border_colour, 0H 
+    game_over:
+        mov block_border_colour, 0H
         call draw_border
+        call show_game_over_screen
     mov ax, 4C00h
-    int 21h         
+    int 21h
 endp main 
 ;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -128,10 +139,11 @@ delay_loop3:
 delay_loop4:
     call keyboard_actions
     loop delay_loop4
-    cmp delay_counter, 5
+    mov ax, speed_delay
+    cmp delay_counter, ax
     jnz delay_loop3
     ret
-endp get_keyboard_char 
+endp get_keyboard_char
 is_this_my_block proc
   ret   
 endp is_this_my_block
@@ -1378,13 +1390,17 @@ keyboard_actions proc
     je shape_shift_right_label
     cmp al, 'a'
     je  shape_shift_left_label
-    cmp al, 's' 
-    je shape_shift_down_label 
+    cmp al, 's'
+    je shape_shift_down_label
     cmp al, 'w'
     je shape_rotate_label
     cmp al, 'f'
     je fast_shape_shift_down_label
-shape_shift_right_label: 
+    cmp al, 'e'
+    je increase_speed_label
+    cmp al, 'q'
+    je decrease_speed_label
+shape_shift_right_label:
     call shape_shift_right
     jmp arrow_exit
 shape_shift_left_label:
@@ -1395,16 +1411,98 @@ shape_shift_down_label:
     jmp arrow_exit                        
 shape_rotate_label:
     call shape_rotate
-    jmp arrow_exit 
+    jmp arrow_exit
 fast_shape_shift_down_label:
 fast_loop:
         call shape_shift_down
         cmp successful_magic_shift, 0H
         je arrow_exit
         jmp fast_loop
+increase_speed_label:
+    call increase_speed
+    jmp arrow_exit
+decrease_speed_label:
+    call decrease_speed
+    jmp arrow_exit
 arrow_exit:
     ret
 endp keyboard_actions
+
+increase_speed proc
+    push ax
+    push bx
+    mov ax, speed_delay
+    mov bx, speed_min_delay
+    cmp ax, bx
+    jbe increase_speed_exit
+    dec word ptr speed_delay
+    inc speed_level
+    call update_speed_display
+increase_speed_exit:
+    pop bx
+    pop ax
+    ret
+endp increase_speed
+
+decrease_speed proc
+    push ax
+    push bx
+    mov ax, speed_delay
+    mov bx, speed_max_delay
+    cmp ax, bx
+    jae decrease_speed_exit
+    inc word ptr speed_delay
+    dec speed_level
+    call update_speed_display
+decrease_speed_exit:
+    pop bx
+    pop ax
+    ret
+endp decrease_speed
+
+display_speed_controls proc
+    push ax
+    push bx
+    push cx
+    push dx
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 06H
+    mov dl, 01H
+    int 10h
+    mov ah, 09H
+    lea dx, msg_speed_ctrl
+    int 21h
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    call update_speed_display
+    ret
+endp display_speed_controls
+
+update_speed_display proc
+    push ax
+    push bx
+    push cx
+    push dx
+    mov al, speed_level
+    add al, 30H
+    mov [msg_speed_level+17], al
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 07H
+    mov dl, 01H
+    int 10h
+    mov ah, 09H
+    lea dx, msg_speed_level
+    int 21h
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp update_speed_display
 genrate_random_number_init proc
    MOV AH, 00h  ; interrupts to get system time        
    INT 1AH      ; CX:DX now hold number of clock ticks since midnight      
@@ -3203,6 +3301,9 @@ score_loop:
     div bx
     add dx, 30h
     mov [msg_score+si], dl
+    mov di, si
+    add di, 9
+    mov [msg_final_score+di], dl
     dec si
     jmp score_loop
 exit_score_loop:
@@ -3437,5 +3538,67 @@ fast_loop_pred_exit:
     mov block_finish_row, bx  
     call draw_single_block_border
     ret
-endp predict    
+endp predict
+
+show_game_over_screen proc
+    push ax
+    push bx
+    push cx
+    push dx
+    mov ax, 0003H
+    int 10h
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 08H
+    mov dl, 15H
+    int 10h
+    mov ah, 09H
+    lea dx, msg_game_over
+    int 21h
+    mov ah, 02H
+    mov dh, 10H
+    mov dl, 12H
+    int 10h
+    mov ah, 09H
+    lea dx, msg_final_score
+    int 21h
+    mov ah, 02H
+    mov dh, 12H
+    mov dl, 10H
+    int 10h
+    mov ah, 09H
+    lea dx, msg_press_key
+    int 21h
+    call play_game_over_sound
+    mov ah, 00H
+    int 16h
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp show_game_over_screen
+
+play_game_over_sound proc
+    push ax
+    push bx
+    push cx
+    push dx
+    mov cx, 3
+play_game_over_sound_loop:
+    mov ah, 0EH
+    mov al, 07H
+    int 10h
+    mov dx, 0FFFFH
+game_over_sound_delay:
+    dec dx
+    jnz game_over_sound_delay
+    loop play_game_over_sound_loop
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp play_game_over_sound
+
 END main
