@@ -57,6 +57,13 @@ JUMPS
     msg_game_over db "*** FIN DEL JUEGO ***$"
     msg_final_score db "Puntaje final: 0000$"
     msg_press_key db "Pulsa una tecla para salir$"
+    saved_speaker_state db 0
+    game_over_notes dw 2280, 2712, 3044, 2280
+GAME_OVER_NOTES_COUNT equ ($-game_over_notes)/2
+NOTE_HOLD_OUTER equ 120
+NOTE_HOLD_INNER equ 380
+NOTE_PAUSE_OUTER equ 60
+NOTE_PAUSE_INNER equ 320
 .code
 main proc far
     mov ax, @data
@@ -3584,16 +3591,56 @@ play_game_over_sound proc
     push bx
     push cx
     push dx
-    mov cx, 3
+    push si
+
+    in al, 61h
+    mov saved_speaker_state, al
+
+    lea si, game_over_notes
+    mov cx, GAME_OVER_NOTES_COUNT
+
 play_game_over_sound_loop:
-    mov ah, 0EH
-    mov al, 07H
-    int 10h
-    mov dx, 0FFFFH
-game_over_sound_delay:
+    mov ax, word ptr [si]
+    mov bx, ax
+    mov al, 0B6h
+    out 43h, al
+    mov ax, bx
+    out 42h, al
+    mov al, ah
+    out 42h, al
+
+    mov al, saved_speaker_state
+    or al, 3
+    out 61h, al
+
+    mov dx, NOTE_HOLD_OUTER
+note_hold_outer_loop:
+    mov bx, NOTE_HOLD_INNER
+note_hold_inner_loop:
+    dec bx
+    jnz note_hold_inner_loop
     dec dx
-    jnz game_over_sound_delay
+    jnz note_hold_outer_loop
+
+    mov al, saved_speaker_state
+    out 61h, al
+
+    mov dx, NOTE_PAUSE_OUTER
+note_pause_outer_loop:
+    mov bx, NOTE_PAUSE_INNER
+note_pause_inner_loop:
+    dec bx
+    jnz note_pause_inner_loop
+    dec dx
+    jnz note_pause_outer_loop
+
+    add si, 2
     loop play_game_over_sound_loop
+
+    mov al, saved_speaker_state
+    out 61h, al
+
+    pop si
     pop dx
     pop cx
     pop bx
