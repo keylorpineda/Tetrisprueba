@@ -141,7 +141,7 @@ delay_loop4:
     loop delay_loop4
     mov ax, speed_delay
     cmp delay_counter, ax
-    jnz delay_loop3
+    jb delay_loop3
     ret
 endp get_keyboard_char
 is_this_my_block proc
@@ -1437,6 +1437,7 @@ increase_speed proc
     jbe increase_speed_exit
     dec word ptr speed_delay
     inc speed_level
+    mov delay_counter, 1
     call update_speed_display
 increase_speed_exit:
     pop bx
@@ -1453,6 +1454,7 @@ decrease_speed proc
     jae decrease_speed_exit
     inc word ptr speed_delay
     dec speed_level
+    mov delay_counter, 1
     call update_speed_display
 decrease_speed_exit:
     pop bx
