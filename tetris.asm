@@ -3918,10 +3918,11 @@ recolor_col_loop:
 recolor_shape_loop:
     cmp ax, MAP_SHAPE_COUNT
     jae recolor_skip_pixel
-    mov al, [si+ax]
+    mov bx, ax
+    mov al, [si+bx]
     cmp dl, al
     jne recolor_shape_next
-    mov al, [di+ax]
+    mov al, [di+bx]
     jmp recolor_write_pixel
 recolor_shape_next:
     inc ax
