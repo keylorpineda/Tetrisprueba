@@ -54,12 +54,7 @@ JUMPS
     msg_score db "Score:0000$"
     msg_speed_ctrl db "Q=Lento  E=Rapido$"
     msg_speed_level db "Nivel velocidad: 0$"
-    msg_game_over_banner_border db "============================================================$"
-    msg_game_over_big_line1 db ' ####     ##    #   #  #####      ####   #   #  #####  ####$'
-    msg_game_over_big_line2 db '#        #  #   ## ##  #         #    #  #   #  #      #   #$'
-    msg_game_over_big_line3 db '#  ###   ####   # # #  ####      #    #  #   #  ####   ####$'
-    msg_game_over_big_line4 db '#    #   #  #   #   #  #         #    #   # #   #      # #$'
-    msg_game_over_big_line5 db ' ####    #  #   #   #  #####      ####     #    #####  #  ##$'
+    msg_game_over db "=== FIN DEL JUEGO ===$"
     msg_game_over_sub db "Los bloques descansan, pero tu ritmo no!$"
     msg_game_over_hint db "Pulsa M durante la partida para cambiar el mapa$"
     msg_final_score db "Puntaje final: 0000$"
@@ -69,19 +64,19 @@ JUMPS
     current_border_colour db 0
     current_panel_colour db 0
     current_text_attribute db 0FH
-    current_game_over_background db 00h
-    current_game_over_frame_attr db 0Eh
-    current_game_over_text_attr db 0Ch
-    current_game_over_footer_attr db 0Ah
+    current_game_over_background db 10h
+    current_game_over_frame_attr db 1Fh
+    current_game_over_text_attr db 1Eh
+    current_game_over_footer_attr db 1Ah
     rotation_performed db 0
     map_background_colours db 08h, 01h
     map_border_colours db 00h, 0Fh
     map_panel_colours db 00h, 05h
     map_text_attributes db 0Fh, 5Eh
-    map_game_over_background db 00h, 00h
-    map_game_over_frame_attrs db 0Eh, 2Eh
-    map_game_over_text_attrs db 0Ch, 4Ch
-    map_game_over_footer_attrs db 0Ah, 2Ah
+    map_game_over_background db 10h, 50h
+    map_game_over_frame_attrs db 1Fh, 5Fh
+    map_game_over_text_attrs db 1Eh, 5Eh
+    map_game_over_footer_attrs db 1Ah, 5Ah
     map_shape_colours db 0EH, 09H, 02H, 04H, 06H, 0DH, 0BH, 0AH, 0CH, 0FH
     map_shape_move_notes dw 1760, 1880, 2000, 2120, 2240, 1820, 1940, 2060, 2180, 2300
     map_shape_move_chirp_notes dw 1880, 2000, 2120, 2240, 2360, 1940, 2060, 2180, 2300, 2420
@@ -594,23 +589,19 @@ init_graphic_mode proc
     ret   
 endp init_graphic_mode
 draw_playground proc
-    mov ah, 0Ch
+    mov ah, 0ch
     mov al, background_colour
     mov dx, play_ground_start_row
-draw_playground_row_loop:
+loop1:
     mov cx, play_ground_start_col
-draw_playground_col_loop:
+loop2:
     int 10h
-    cmp cx, play_ground_finish_col
-    je draw_playground_next_row
     inc cx
-    jmp draw_playground_col_loop
-draw_playground_next_row:
-    cmp dx, play_ground_finish_row
-    je draw_playground_exit
+    cmp cx, play_ground_finish_col
+    jnz loop2
     inc dx
-    jmp draw_playground_row_loop
-draw_playground_exit:
+    cmp dx, play_ground_finish_row
+    jnz loop1
     ret
 endp draw_playground
 clear_upcoming_panel proc
@@ -3981,16 +3972,14 @@ recolor_write_pixel:
     pop cx
     pop dx
 recolor_skip_pixel:
-    cmp cx, play_ground_finish_col
-    je recolor_next_row
     inc cx
-    jmp recolor_col_loop
-recolor_next_row:
-    cmp dx, play_ground_finish_row
-    je recolor_done
+    mov ax, play_ground_finish_col
+    cmp cx, ax
+    jb recolor_col_loop
     inc dx
-    jmp recolor_row_loop
-recolor_done:
+    mov ax, play_ground_finish_row
+    cmp dx, ax
+    jb recolor_row_loop
     pop bp
     pop di
     pop si
@@ -4085,84 +4074,62 @@ show_game_over_screen proc
     int 10h
     mov ah, 02H
     mov bh, 00H
-    mov dh, 03H
-    mov dl, 10H
-    int 10h
-    mov bl, current_game_over_frame_attr
-    lea dx, msg_game_over_banner_border
-    call print_colored_string
-    mov ah, 02H
-    mov bh, 00H
-    mov dh, 04H
-    mov dl, 10H
-    int 10h
-    mov bl, current_game_over_text_attr
-    lea dx, msg_game_over_big_line1
-    call print_colored_string
-    mov ah, 02H
-    mov bh, 00H
     mov dh, 05H
-    mov dl, 10H
+    mov dl, 18H
     int 10h
-    lea dx, msg_game_over_big_line2
-    call print_colored_string
+    mov ah, 09H
+    mov al, '='
+    mov bh, 00H
+    mov bl, current_game_over_frame_attr
+    mov cx, 28
+    int 10h
     mov ah, 02H
     mov bh, 00H
     mov dh, 06H
-    mov dl, 10H
+    mov dl, 20H
     int 10h
-    lea dx, msg_game_over_big_line3
+    mov bl, current_game_over_text_attr
+    lea dx, msg_game_over
     call print_colored_string
     mov ah, 02H
     mov bh, 00H
     mov dh, 07H
-    mov dl, 10H
+    mov dl, 18H
     int 10h
-    lea dx, msg_game_over_big_line4
-    call print_colored_string
-    mov ah, 02H
+    mov ah, 09H
+    mov al, '='
     mov bh, 00H
-    mov dh, 08H
-    mov dl, 10H
+    mov bl, current_game_over_frame_attr
+    mov cx, 28
     int 10h
-    lea dx, msg_game_over_big_line5
-    call print_colored_string
     mov ah, 02H
     mov bh, 00H
     mov dh, 09H
     mov dl, 10H
-    int 10h
-    mov bl, current_game_over_frame_attr
-    lea dx, msg_game_over_banner_border
-    call print_colored_string
-    mov ah, 02H
-    mov bh, 00H
-    mov dh, 0BH
-    mov dl, 0CH
     int 10h
     mov bl, current_game_over_text_attr
     lea dx, msg_game_over_sub
     call print_colored_string
     mov ah, 02H
     mov bh, 00H
-    mov dh, 0DH
-    mov dl, 0CH
+    mov dh, 11H
+    mov dl, 12H
     int 10h
     mov bl, current_game_over_frame_attr
     lea dx, msg_final_score
     call print_colored_string
     mov ah, 02H
     mov bh, 00H
-    mov dh, 0FH
-    mov dl, 0AH
+    mov dh, 13H
+    mov dl, 10H
     int 10h
     mov bl, current_game_over_footer_attr
     lea dx, msg_press_key
     call print_colored_string
     mov ah, 02H
     mov bh, 00H
-    mov dh, 10H
-    mov dl, 08H
+    mov dh, 14H
+    mov dl, 06H
     int 10h
     mov bl, current_game_over_footer_attr
     lea dx, msg_game_over_hint
