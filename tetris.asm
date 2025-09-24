@@ -35,7 +35,7 @@ JUMPS
     random_incoming2_shape_number db ?  
     position db 1H
     shift_counter dw 0H
-    random_shape_number db ?    
+    random_shape_number db 0
     produce_next_shape db 0H    
     seconds db 0  ;?ï¿½ï¿½ VARIABLE IN DATA SEGMENT.   
     block_is_free db 0  
@@ -54,37 +54,71 @@ JUMPS
     msg_score db "Score:0000$"
     msg_speed_ctrl db "Q=Lento  E=Rapido$"
     msg_speed_level db "Nivel velocidad: 0$"
-    msg_game_over db "*** FIN DEL JUEGO ***$"
+    msg_game_over db "=== FIN DEL JUEGO ===$"
+    msg_game_over_sub db "Los bloques descansan, pero tu ritmo no!$"
+    msg_game_over_hint db "Pulsa M durante la partida para cambiar el mapa$"
     msg_final_score db "Puntaje final: 0000$"
     msg_press_key db "Pulsa una tecla para salir$"
     saved_speaker_state db 0
-    game_over_notes dw 2280, 2712, 3044, 2280
+    current_map_index db 0
+    current_border_colour db 0
+    current_panel_colour db 0
+    current_text_attribute db 0FH
+    current_game_over_background db 10h
+    current_game_over_frame_attr db 1Fh
+    current_game_over_text_attr db 1Eh
+    current_game_over_footer_attr db 1Ah
+    rotation_performed db 0
+    map_background_colours db 08h, 01h
+    map_border_colours db 00h, 0Fh
+    map_panel_colours db 00h, 05h
+    map_text_attributes db 0Fh, 5Eh
+    map_game_over_background db 10h, 50h
+    map_game_over_frame_attrs db 1Fh, 5Fh
+    map_game_over_text_attrs db 1Eh, 5Eh
+    map_game_over_footer_attrs db 1Ah, 5Ah
+    map_shape_colours db 0EH, 09H, 02H, 04H, 06H, 0DH, 0BH, 0AH, 0CH, 0FH
+    theme_old_background db 0
+    theme_new_background db 0
+    move_sound_frequency dw 1800
+    rotate_sound_notes dw 2200, 1600
+    block_land_sound_notes dw 900, 600
+    line_clear_sound_notes dw 1500, 1800, 2100
+    map_switch_sound_notes dw 1200, 1500, 1900
+    game_over_notes dw 3044, 2712, 2280, 1900, 1524, 1715
 GAME_OVER_NOTES_COUNT equ ($-game_over_notes)/2
 NOTE_HOLD_OUTER equ 120
 NOTE_HOLD_INNER equ 380
 NOTE_PAUSE_OUTER equ 60
 NOTE_PAUSE_INNER equ 320
+MAP_SHAPE_COUNT equ 5
+BASIC_HOLD_OUTER equ 14
+BASIC_HOLD_INNER equ 180
+BASIC_PAUSE_OUTER equ 6
+BASIC_PAUSE_INNER equ 120
 .code
 main proc far
     mov ax, @data
     mov ds, ax
     call init_clear_screen
     call init_graphic_mode
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;     
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;
     ;call draw_playground
     ;mov random_shape_number, 2H
     ;call draw_SP_block;
     ;call generate_random_shape
     ;game_test: 
-    ;    call keyboard_actions 
+    ;    call keyboard_actions
     ;     jmp  game_test
    ;mov ax, 4C00h
-   ;int 21h 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;    
+   ;int 21h
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    mov dl, current_map_index
+    call apply_map_palette
+    call draw_left_panel_background
     call draw_playground
-    mov block_border_colour, 0H 
-    call draw_border
+    call draw_theme_border
     call display_score
     call display_speed_controls
     call genrate_random_number_init 
@@ -94,22 +128,21 @@ main proc far
         ;call keyboard_actions 
         ;call delay_2
         call get_keyboard_char
-        call shape_shift_down        
-        cmp produce_next_shape, 1H 
+        call shape_shift_down
+        cmp produce_next_shape, 1H
         jne skip_genterate_label
-    generate_label: 
+        call play_block_land_sound
+    generate_label:
         call check_and_modify_full_rows
-        mov block_border_colour, 0H 
-        call draw_border
-        call update_score    
+        call draw_theme_border
+        call update_score
         call generate_random_shape
         cmp not_enough_space, 1H
         je game_over
-    skip_genterate_label:     
-        jmp game_loop 
+    skip_genterate_label:
+        jmp game_loop
     game_over:
-        mov block_border_colour, 0H
-        call draw_border
+        call draw_theme_border
         call show_game_over_screen
     mov ax, 4C00h
     int 21h
@@ -223,7 +256,8 @@ countinue_full_rows:
     mov block_colour, bl
     call draw_single_block
     call collapse
-    add score, 10                    
+    call play_line_clear_sound
+    add score, 10
     pop bx
     add bx, 12
     jmp check_and_modify_full_rows_loop 
@@ -569,11 +603,13 @@ loop2:
 endp draw_playground
 clear_upcoming_panel proc
     mov ah, 0ch
-    mov al, 0h
-    mov dx, 40  
+    mov bl, current_panel_colour
+    mov al, bl
+    mov dx, 40
 clear_upcoming_panel_loop1:
     mov cx, 256
 clear_upcoming_panel_loop2:
+    mov al, bl
     int 10h
     inc cx
     cmp cx, 304
@@ -582,11 +618,12 @@ clear_upcoming_panel_loop2:
     cmp dx, 76
     jnz clear_upcoming_panel_loop1
     mov ah, 0ch
-    mov al, 0h
-    mov dx, 136  
+    mov al, bl
+    mov dx, 136
 clear_upcoming_panel_loop3:
     mov cx, 256
 clear_upcoming_panel_loop4:
+    mov al, bl
     int 10h
     inc cx
     cmp cx, 304
@@ -1159,12 +1196,12 @@ shape_shift_right proc
     je exit_shape_shift_right                  
     call magic_shift_right
     mov successful_magic_shift, 1H
+    call play_move_sound
 exit_shape_shift_right:
-    mov block_border_colour, 0H 
-    call draw_border
+    call draw_theme_border
     call predict
-    ret   
-endp shape_shift_right 
+    ret
+endp shape_shift_right
 shape_shift_left proc
     mov successful_magic_shift, 0H 
     mov bx, active_block_num_one[0]
@@ -1233,11 +1270,11 @@ shape_shift_left proc
     je exit_shape_shift_left
     call magic_shift_left
     mov successful_magic_shift, 1H
+    call play_move_sound
 exit_shape_shift_left:
-    mov block_border_colour, 0H 
-    call draw_border
+    call draw_theme_border
     call predict
-    ret   
+    ret
 endp shape_shift_left
 shape_shift_down proc 
     mov produce_next_shape, 0H
@@ -1308,9 +1345,10 @@ shape_shift_down proc
     je exit_shape_shift_down    
     call magic_shift_down
     mov successful_magic_shift, 1H
+    call play_move_sound
     jmp exit_shape_shift_down_without_any_produce
 exit_shape_shift_down:
-    mov produce_next_shape, 1H 
+    mov produce_next_shape, 1H
 exit_shape_shift_down_without_any_produce:
     ;call predict
     ret
@@ -1383,6 +1421,7 @@ shape_shift_up proc
     je exit_shape_shift_up    
     call magic_shift_up
     mov successful_magic_shift, 1H
+    call play_move_sound
 exit_shape_shift_up:
     call predict
     ret
@@ -1407,6 +1446,10 @@ keyboard_actions proc
     je increase_speed_label
     cmp al, 'q'
     je decrease_speed_label
+    cmp al, 'm'
+    je toggle_map_label
+    cmp al, 'M'
+    je toggle_map_label
 shape_shift_right_label:
     call shape_shift_right
     jmp arrow_exit
@@ -1430,6 +1473,9 @@ increase_speed_label:
     jmp arrow_exit
 decrease_speed_label:
     call decrease_speed
+    jmp arrow_exit
+toggle_map_label:
+    call toggle_map
     jmp arrow_exit
 arrow_exit:
     ret
@@ -1480,8 +1526,19 @@ display_speed_controls proc
     mov dl, 01H
     int 10h
     mov ah, 09H
+    mov al, ' '
+    mov bh, 00H
+    mov bl, current_text_attribute
+    mov cx, 24
+    int 10h
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 06H
+    mov dl, 01H
+    int 10h
+    mov bl, current_text_attribute
     lea dx, msg_speed_ctrl
-    int 21h
+    call print_colored_string
     pop dx
     pop cx
     pop bx
@@ -1504,8 +1561,19 @@ update_speed_display proc
     mov dl, 01H
     int 10h
     mov ah, 09H
+    mov al, ' '
+    mov bh, 00H
+    mov bl, current_text_attribute
+    mov cx, 24
+    int 10h
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 07H
+    mov dl, 01H
+    int 10h
+    mov bl, current_text_attribute
     lea dx, msg_speed_level
-    int 21h
+    call print_colored_string
     pop dx
     pop cx
     pop bx
@@ -1542,7 +1610,8 @@ display_upcoming_1 proc
     cmp random_incoming1_shape_number, 4
     je display_upcoming_1_4
 display_upcoming_1_0:
-    mov block_colour, 0EH
+    mov al, 0
+    call set_shape_colour
     mov block_start_col, 268
     mov block_start_row, 40
     mov block_finish_col, 280
@@ -1565,7 +1634,8 @@ display_upcoming_1_0:
     call draw_single_block
     jmp display_upcoming_1_exit
 display_upcoming_1_1:
-    mov block_colour, 9H
+    mov al, 1
+    call set_shape_colour
     mov block_start_col, 256
     mov block_start_row,  40
     mov block_finish_col, 268
@@ -1588,7 +1658,8 @@ display_upcoming_1_1:
     call draw_single_block
     jmp display_upcoming_1_exit
 display_upcoming_1_2:
-    mov block_colour, 2H
+    mov al, 2
+    call set_shape_colour
     mov block_start_col, 268
     mov block_start_row,  40
     mov block_finish_col, 280
@@ -1611,7 +1682,8 @@ display_upcoming_1_2:
     call draw_single_block
     jmp display_upcoming_1_exit
 display_upcoming_1_3:
-    mov block_colour, 4H
+    mov al, 3
+    call set_shape_colour
     mov block_start_col, 256
     mov block_start_row, 64
     mov block_finish_col, 268
@@ -1633,8 +1705,9 @@ display_upcoming_1_3:
     mov block_finish_row,  76
     call draw_single_block
     jmp display_upcoming_1_exit
-display_upcoming_1_4: 
-    mov block_colour, 6H
+display_upcoming_1_4:
+    mov al, 4
+    call set_shape_colour
     mov block_start_col, 268
     mov block_start_row, 40
     mov block_finish_col, 280
@@ -1670,7 +1743,8 @@ display_upcoming_2 proc
     cmp random_incoming2_shape_number, 4
     je display_upcoming_2_4
 display_upcoming_2_0:
-    mov block_colour, 0EH
+    mov al, 0
+    call set_shape_colour
     mov block_start_col, 268
     mov block_start_row, 136
     mov block_finish_col, 280
@@ -1693,7 +1767,8 @@ display_upcoming_2_0:
     call draw_single_block
     jmp display_upcoming_2_exit
 display_upcoming_2_1:
-    mov block_colour, 9H
+    mov al, 1
+    call set_shape_colour
     mov block_start_col, 256
     mov block_start_row,  136
     mov block_finish_col, 268
@@ -1716,7 +1791,8 @@ display_upcoming_2_1:
     call draw_single_block
     jmp display_upcoming_2_exit
 display_upcoming_2_2:
-    mov block_colour, 2H
+    mov al, 2
+    call set_shape_colour
     mov block_start_col, 268
     mov block_start_row,  136
     mov block_finish_col, 280
@@ -1739,7 +1815,8 @@ display_upcoming_2_2:
     call draw_single_block
     jmp display_upcoming_2_exit
 display_upcoming_2_3:
-    mov block_colour, 4H
+    mov al, 3
+    call set_shape_colour
     mov block_start_col, 256
     mov block_start_row, 160
     mov block_finish_col, 268
@@ -1761,8 +1838,9 @@ display_upcoming_2_3:
     mov block_finish_row,  172
     call draw_single_block
     jmp display_upcoming_2_exit
-display_upcoming_2_4: 
-    mov block_colour, 6H
+display_upcoming_2_4:
+    mov al, 4
+    call set_shape_colour
     mov block_start_col, 268
     mov block_start_row, 136
     mov block_finish_col, 280
@@ -1812,7 +1890,8 @@ generate_random_shape proc
    cmp random_shape_number, 4  
    je draw_Z_block_label 
 draw_square_block_label:
-    mov block_colour, 0EH
+    mov al, 0
+    call set_shape_colour
     mov block_start_col, 148
     mov block_start_row, 4
     mov block_finish_col, 160
@@ -1844,7 +1923,8 @@ draw_square_block_label:
    call draw_square_block
    jmp generate_random_shape_exit
 draw_rectangle_block_label:
-   mov block_colour, 9H 
+   mov al, 1
+   call set_shape_colour
     mov block_start_col, 136
     mov block_start_row, 4
     mov block_finish_col, 148
@@ -1904,7 +1984,8 @@ draw_rectangle_block_label:
    call draw_rectangle_block
    jmp generate_random_shape_exit
 draw_L_block_label:
-    mov block_colour, 2H
+    mov al, 2
+    call set_shape_colour
     mov block_start_col, 148
     mov block_start_row, 4
     mov block_finish_col, 160
@@ -1936,7 +2017,8 @@ draw_L_block_label:
    call draw_L_block
    jmp generate_random_shape_exit 
 draw_T_block_label: 
-    mov block_colour, 4H
+    mov al, 3
+    call set_shape_colour
     mov block_start_col, 148
     mov block_start_row, 4
     mov block_finish_col, 160
@@ -1967,8 +2049,9 @@ draw_T_block_label:
     je not_enough_space_label_T
    call draw_T_block
    jmp generate_random_shape_exit 
-draw_Z_block_label: 
-    mov block_colour, 6H
+draw_Z_block_label:
+    mov al, 4
+    call set_shape_colour
     mov block_start_col, 148
     mov block_start_row, 4
     mov block_finish_col, 160
@@ -2028,8 +2111,9 @@ generate_random_shape_exit:
 endp generate_random_shape
 shape_rotate proc
     mov shift_counter, 0H
+    mov rotation_performed, 0
     cmp random_shape_number, 0
-    je  shape_rotate_exit 
+    je  shape_rotate_exit
     cmp random_shape_number, 1
     je  four_big_block_rotate 
     cmp random_shape_number, 2
@@ -2471,6 +2555,7 @@ three_big_block_rotate_start:
     call draw_single_block
     call fill_array_num_four
     pop cx
+    mov rotation_performed, 1
     jmp shape_rotate_exit
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;      
 four_big_block_rotate:  
@@ -2840,6 +2925,7 @@ four_big_block_rotate_start:
     call draw_single_block
     call fill_array_num_four
     pop cx
+    mov rotation_performed, 1
     jmp shape_rotate_exit
 revert_position:
     mov position, 1H
@@ -2849,11 +2935,15 @@ shape_rotate_exit:
        cmp position, 5H
        je revert_position
 shape_rotate_exit_final:
-    mov block_border_colour, 0H 
-    call draw_border
+    cmp rotation_performed, 1
+    jne skip_rotate_sound
+    call play_rotate_sound
+skip_rotate_sound:
+    mov rotation_performed, 0
+    call draw_theme_border
     call predict
       ret
-endp shape_rotate  
+endp shape_rotate
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 magic_shift_right proc
     mov bx, active_block_num_one[0]
@@ -3288,14 +3378,33 @@ magic_shift_up proc
     ret
 endp  magic_shift_up 
 display_score proc
+    push ax
+    push bx
+    push cx
+    push dx
     mov ah, 02H
     mov bh, 00H
     mov dh, 04H
-    mov dl, 01H    
+    mov dl, 01H
     int 10h
     mov ah, 09H
+    mov al, ' '
+    mov bh, 00H
+    mov bl, current_text_attribute
+    mov cx, 12
+    int 10h
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 04H
+    mov dl, 01H
+    int 10h
+    mov bl, current_text_attribute
     lea dx, msg_score
-    int 21h  
+    call print_colored_string
+    pop dx
+    pop cx
+    pop bx
+    pop ax
     ret
 endp display_score
 update_score proc
@@ -3549,6 +3658,374 @@ fast_loop_pred_exit:
     ret
 endp predict
 
+draw_theme_border proc
+    push ax
+    mov al, current_border_colour
+    mov block_border_colour, al
+    pop ax
+    call draw_border
+    ret
+endp draw_theme_border
+
+draw_left_panel_background proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    mov ax, play_ground_start_col
+    cmp ax, 0
+    je left_panel_background_exit
+    sub ax, 4
+    mov si, ax
+    mov dx, 0
+left_panel_background_row_loop:
+    mov cx, 0
+left_panel_background_col_loop:
+    mov ah, 0Ch
+    mov al, current_panel_colour
+    mov bh, 0
+    int 10h
+    inc cx
+    cmp cx, si
+    jb left_panel_background_col_loop
+    inc dx
+    cmp dx, 200
+    jb left_panel_background_row_loop
+left_panel_background_exit:
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp draw_left_panel_background
+
+print_colored_string proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    mov si, dx
+print_colored_string_loop:
+    lodsb
+    cmp al, '$'
+    je print_colored_string_exit
+    mov ah, 09h
+    mov bh, 0
+    mov cx, 1
+    int 10h
+    jmp print_colored_string_loop
+print_colored_string_exit:
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp print_colored_string
+
+play_basic_pause proc
+    push cx
+    push dx
+    mov cx, BASIC_PAUSE_OUTER
+play_basic_pause_outer:
+    mov dx, BASIC_PAUSE_INNER
+play_basic_pause_inner:
+    dec dx
+    jnz play_basic_pause_inner
+    loop play_basic_pause_outer
+    pop dx
+    pop cx
+    ret
+endp play_basic_pause
+
+play_basic_tone proc
+    push ax
+    push bx
+    push cx
+    push dx
+    mov bx, ax
+    in al, 61h
+    mov saved_speaker_state, al
+    mov al, 0B6h
+    out 43h, al
+    mov ax, bx
+    out 42h, al
+    mov al, ah
+    out 42h, al
+    mov al, saved_speaker_state
+    or al, 3
+    out 61h, al
+    mov cx, BASIC_HOLD_OUTER
+play_basic_tone_outer:
+    mov dx, BASIC_HOLD_INNER
+play_basic_tone_inner:
+    dec dx
+    jnz play_basic_tone_inner
+    loop play_basic_tone_outer
+    mov al, saved_speaker_state
+    out 61h, al
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp play_basic_tone
+
+play_move_sound proc
+    push ax
+    mov ax, move_sound_frequency
+    call play_basic_tone
+    pop ax
+    ret
+endp play_move_sound
+
+play_rotate_sound proc
+    push ax
+    push si
+    lea si, rotate_sound_notes
+    mov ax, [si]
+    call play_basic_tone
+    call play_basic_pause
+    mov ax, [si+2]
+    call play_basic_tone
+    pop si
+    pop ax
+    ret
+endp play_rotate_sound
+
+play_block_land_sound proc
+    push ax
+    push si
+    lea si, block_land_sound_notes
+    mov ax, [si]
+    call play_basic_tone
+    call play_basic_pause
+    mov ax, [si+2]
+    call play_basic_tone
+    pop si
+    pop ax
+    ret
+endp play_block_land_sound
+
+play_line_clear_sound proc
+    push ax
+    push si
+    lea si, line_clear_sound_notes
+    mov ax, [si]
+    call play_basic_tone
+    call play_basic_pause
+    mov ax, [si+2]
+    call play_basic_tone
+    call play_basic_pause
+    mov ax, [si+4]
+    call play_basic_tone
+    pop si
+    pop ax
+    ret
+endp play_line_clear_sound
+
+play_map_toggle_sound proc
+    push ax
+    push si
+    lea si, map_switch_sound_notes
+    mov ax, [si]
+    call play_basic_tone
+    call play_basic_pause
+    mov ax, [si+2]
+    call play_basic_tone
+    call play_basic_pause
+    mov ax, [si+4]
+    call play_basic_tone
+    pop si
+    pop ax
+    ret
+endp play_map_toggle_sound
+
+set_shape_colour proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    mov dl, al
+    lea si, map_shape_colours
+    cmp current_map_index, 0
+    je set_shape_colour_base
+    add si, MAP_SHAPE_COUNT
+set_shape_colour_base:
+    xor ax, ax
+    mov al, dl
+    add si, ax
+    mov al, [si]
+    mov block_colour, al
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp set_shape_colour
+
+recolor_playfield proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push bp
+    mov al, dl
+    xor ah, ah
+    mov bx, ax
+    mov al, map_background_colours[bx]
+    mov theme_old_background, al
+    mov al, current_map_index
+    xor ah, ah
+    mov bx, ax
+    mov al, map_background_colours[bx]
+    mov theme_new_background, al
+    lea si, map_shape_colours
+    mov al, dl
+    cmp al, 0
+    je recolor_old_pointer_ready
+    add si, MAP_SHAPE_COUNT
+recolor_old_pointer_ready:
+    lea di, map_shape_colours
+    mov al, current_map_index
+    cmp al, 0
+    je recolor_new_pointer_ready
+    add di, MAP_SHAPE_COUNT
+recolor_new_pointer_ready:
+    mov dx, play_ground_start_row
+recolor_row_loop:
+    mov cx, play_ground_start_col
+recolor_col_loop:
+    push dx
+    push cx
+    mov ah, 0DH
+    mov bh, 0
+    int 10h
+    mov dl, al
+    pop cx
+    pop dx
+    mov al, theme_old_background
+    cmp dl, al
+    je recolor_write_background
+    xor ax, ax
+recolor_shape_loop:
+    cmp ax, MAP_SHAPE_COUNT
+    jae recolor_skip_pixel
+    mov al, [si+ax]
+    cmp dl, al
+    jne recolor_shape_next
+    mov al, [di+ax]
+    jmp recolor_write_pixel
+recolor_shape_next:
+    inc ax
+    jmp recolor_shape_loop
+recolor_write_background:
+    mov al, theme_new_background
+    jmp recolor_write_pixel
+recolor_write_pixel:
+    push dx
+    push cx
+    mov ah, 0Ch
+    mov bh, 0
+    int 10h
+    pop cx
+    pop dx
+recolor_skip_pixel:
+    inc cx
+    mov ax, play_ground_finish_col
+    cmp cx, ax
+    jb recolor_col_loop
+    inc dx
+    mov ax, play_ground_finish_row
+    cmp dx, ax
+    jb recolor_row_loop
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp recolor_playfield
+
+apply_map_palette proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    mov ah, current_map_index
+    mov al, current_map_index
+    xor ah, ah
+    mov bx, ax
+    mov al, map_background_colours[bx]
+    mov background_colour, al
+    mov al, map_border_colours[bx]
+    mov current_border_colour, al
+    mov al, map_panel_colours[bx]
+    mov current_panel_colour, al
+    mov al, map_text_attributes[bx]
+    mov current_text_attribute, al
+    mov al, map_game_over_background[bx]
+    mov current_game_over_background, al
+    mov al, map_game_over_frame_attrs[bx]
+    mov current_game_over_frame_attr, al
+    mov al, map_game_over_text_attrs[bx]
+    mov current_game_over_text_attr, al
+    mov al, map_game_over_footer_attrs[bx]
+    mov current_game_over_footer_attr, al
+    mov al, random_shape_number
+    call set_shape_colour
+    cmp dl, current_map_index
+    je apply_map_palette_skip_recolor
+    call recolor_playfield
+apply_map_palette_skip_recolor:
+    mov al, current_border_colour
+    mov block_border_colour, al
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp apply_map_palette
+
+toggle_map proc
+    push ax
+    push bx
+    push cx
+    push dx
+    mov dl, current_map_index
+    mov al, current_map_index
+    xor al, 1
+    mov current_map_index, al
+    call apply_map_palette
+    call draw_left_panel_background
+    call draw_theme_border
+    call update_score
+    call display_speed_controls
+    call clear_upcoming_panel
+    call display_upcoming_1
+    call display_upcoming_2
+    call predict
+    call play_map_toggle_sound
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp toggle_map
+
 show_game_over_screen proc
     push ax
     push bx
@@ -3556,28 +4033,73 @@ show_game_over_screen proc
     push dx
     mov ax, 0003H
     int 10h
+    mov ax, 0600h
+    mov bh, current_game_over_background
+    mov cx, 0000h
+    mov dx, 184Fh
+    int 10h
     mov ah, 02H
     mov bh, 00H
-    mov dh, 08H
-    mov dl, 15H
+    mov dh, 05H
+    mov dl, 18H
     int 10h
     mov ah, 09H
+    mov al, '='
+    mov bh, 00H
+    mov bl, current_game_over_frame_attr
+    mov cx, 28
+    int 10h
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 06H
+    mov dl, 20H
+    int 10h
+    mov bl, current_game_over_text_attr
     lea dx, msg_game_over
-    int 21h
+    call print_colored_string
     mov ah, 02H
-    mov dh, 10H
-    mov dl, 12H
+    mov bh, 00H
+    mov dh, 07H
+    mov dl, 18H
     int 10h
     mov ah, 09H
-    lea dx, msg_final_score
-    int 21h
+    mov al, '='
+    mov bh, 00H
+    mov bl, current_game_over_frame_attr
+    mov cx, 28
+    int 10h
     mov ah, 02H
-    mov dh, 12H
+    mov bh, 00H
+    mov dh, 09H
     mov dl, 10H
     int 10h
-    mov ah, 09H
+    mov bl, current_game_over_text_attr
+    lea dx, msg_game_over_sub
+    call print_colored_string
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 11H
+    mov dl, 12H
+    int 10h
+    mov bl, current_game_over_frame_attr
+    lea dx, msg_final_score
+    call print_colored_string
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 13H
+    mov dl, 10H
+    int 10h
+    mov bl, current_game_over_footer_attr
     lea dx, msg_press_key
-    int 21h
+    call print_colored_string
+    mov ah, 02H
+    mov bh, 00H
+    mov dh, 14H
+    mov dl, 06H
+    int 10h
+    mov bl, current_game_over_footer_attr
+    lea dx, msg_game_over_hint
+    call print_colored_string
     call play_game_over_sound
     mov ah, 00H
     int 16h
